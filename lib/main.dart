@@ -10,9 +10,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
+      title: 'Bluetooth Thermometer',
       debugShowCheckedModeBanner: false,
-      home: SplashPage(),
+      theme: ThemeData.dark(),
+      home: const SplashPage(), // 최초 시작은 SplashPage
     );
   }
 }

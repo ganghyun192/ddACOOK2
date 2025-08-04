@@ -1,6 +1,7 @@
-// thermometer_page.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'bluetooth_service.dart';
 
 class ThermometerPage extends StatefulWidget {
   const ThermometerPage({super.key});
@@ -10,72 +11,135 @@ class ThermometerPage extends StatefulWidget {
 }
 
 class _ThermometerPageState extends State<ThermometerPage> {
-  int _currentTemperature = 0;
-  final int _targetTemperature = 100;
-  bool _isConfirmed = false;
-  final FlutterTts _flutterTts = FlutterTts();
+  final FlutterTts _tts = FlutterTts();
+  double _currentTemperature = 0;
+  int _targetTemperature = 30;
+  bool _isTemperatureSet = false;
+  bool _hasAnnounced = false;
+  double? _lastTemperature;
+  StreamSubscription<String>? _btSubscription;
+
+  Offset _swipeStart = Offset.zero;
+  Offset _swipeEnd = Offset.zero;
 
   @override
   void initState() {
     super.initState();
-    _speak('온도 설정 화면입니다. 오른쪽으로 스와이프하면 5도 증가, 왼쪽은 5도 감소, 위로는 10도 증가입니다. 설정을 마치려면 화면을 두 번 터치해주세요.');
+    _listenToBluetooth();
+    debugPrint('🌡️ ThermometerPage 초기화됨');
+    _tts.speak("온도를 설정해주세요");
   }
 
-  Future<void> _speak(String text) async {
-    await _flutterTts.setLanguage("ko-KR");
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.speak(text);
-  }
+  void _listenToBluetooth() {
+    _btSubscription = BluetoothService().onDataReceived.listen((data) {
+      data = data.trim();
+      final parsed = double.tryParse(data);
 
-  void _adjustTemperature(int delta) {
-    if (_isConfirmed) return;
-    setState(() {
-      _currentTemperature = (_currentTemperature + delta).clamp(0, _targetTemperature);
+      if (parsed != null && parsed != _lastTemperature && parsed != 85.0) {
+        setState(() {
+          _currentTemperature = parsed;
+          _lastTemperature = parsed;
+        });
+
+        if (_isTemperatureSet &&
+            _currentTemperature >= _targetTemperature &&
+            !_hasAnnounced) {
+          _tts.speak("설정 온도에 도달했습니다");
+          _hasAnnounced = true;
+        }
+      }
     });
   }
 
-  void _onDoubleTap() {
-    if (_currentTemperature > 0) {
-      setState(() {
-        _isConfirmed = true;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('온도 설정 완료')),
-      );
-      _speak('온도 설정이 완료되었습니다. 현재 설정된 온도는 $_currentTemperature 도 입니다.');
+  void _handleSwipe() {
+    if (_isTemperatureSet) return;
+
+    final dx = _swipeEnd.dx - _swipeStart.dx;
+    final dy = _swipeEnd.dy - _swipeStart.dy;
+
+    setState(() {
+      if (dx > 50) {
+        _targetTemperature += 5;
+      } else if (dx < -50) {
+        _targetTemperature -= 5;
+      } else if (dy < -50) {
+        _targetTemperature += 10;
+      } else if (dy > 50) {
+        Navigator.pop(context);
+        return;
+      }
+
+      if (_targetTemperature > 200) _targetTemperature = 200;
+      if (_targetTemperature < 0) _targetTemperature = 0;
+    });
+  }
+
+  void _handleDoubleTap() async {
+    if (_isTemperatureSet) return;
+
+    setState(() {
+      _isTemperatureSet = true;
+    });
+
+    if (!BluetoothService().isConnected) {
+      final success = await BluetoothService().connectWithSavedAddress();
+      if (!success) {
+        _tts.speak("블루투스 연결에 실패했습니다");
+        return;
+      }
     }
+
+    _tts.speak("설정하신 온도는 $_targetTemperature 도입니다");
   }
 
   @override
   void dispose() {
-    _flutterTts.stop();
+    _btSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onVerticalDragEnd: (details) {
-        if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
-          Navigator.pop(context);
-        } else if (details.primaryVelocity != null && details.primaryVelocity! < 0) {
-          _adjustTemperature(10);
-        }
-      },
-      onHorizontalDragEnd: (details) {
-        if (details.primaryVelocity != null && details.primaryVelocity! > 0) {
-          _adjustTemperature(5);
-        } else if (details.primaryVelocity != null && details.primaryVelocity! < 0) {
-          _adjustTemperature(-5);
-        }
-      },
-      onDoubleTap: _onDoubleTap,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Text(
-            '$_currentTemperature°C',
-            style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        onPanStart: (details) => _swipeStart = details.localPosition,
+        onPanUpdate: (details) => _swipeEnd = details.localPosition,
+        onPanEnd: (_) => _handleSwipe(),
+        onDoubleTap: _handleDoubleTap,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                '현재 온도',
+                style: TextStyle(color: Colors.white, fontSize: 24),
+              ),
+              Text(
+                '${_currentTemperature.toStringAsFixed(1)} °C',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 48,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '설정 온도',
+                style: TextStyle(color: Colors.white, fontSize: 24),
+              ),
+              Text(
+                '$_targetTemperature °C',
+                style: const TextStyle(color: Colors.white, fontSize: 36),
+              ),
+              if (_isTemperatureSet)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12.0),
+                  child: Text(
+                    '설정 완료됨',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

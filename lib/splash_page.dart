@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'home_page.dart';
+import 'bluetooth_page.dart'; // ✅ BluetoothPage로 이동
+
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -14,9 +15,8 @@ class _SplashPageState extends State<SplashPage> {
   void initState() {
     super.initState();
     Timer(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const BluetoothPage()),
       );
     });
   }
@@ -27,11 +27,12 @@ class _SplashPageState extends State<SplashPage> {
       backgroundColor: Colors.blue,
       body: Center(
         child: Text(
-          'ddacook',
+          'DDACOOK',
           style: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
+            fontSize: 32,
             color: Colors.white,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 4,
           ),
         ),
       ),
