@@ -1,16 +1,54 @@
-# flutter_project
+# DDACOOK 🍳  
+시각장애인을 위한 **BLE 기반 온도계 + 타이머 보조 앱**  
+(Flutter + Arduino HM-10 + DS18B20)
 
-A new Flutter project.
+---
 
-## Getting Started
+## 🚀 프로젝트 개요
+DDACOOK은 요리 환경에서 **온도**와 **시간**을 동시에 관리할 수 있도록 제작된 Flutter 앱입니다.  
+Arduino의 **DS18B20 방수 온도 센서**와 **HM-10 (CC2541) BLE 모듈**을 통해 실시간 온도를 수집하고,  
+앱에서 설정한 목표 온도와 타이머 완료 시 **TTS(음성 안내)**로 사용자에게 결과를 알려줍니다.
 
-This project is a starting point for a Flutter application.
+---
 
-A few resources to get you started if this is your first Flutter project:
+## 🛠️ 기술 스택
+- **Flutter** 3.x  
+- **Dart**  
+- **flutter_blue_plus**: BLE 통신  
+- **flutter_tts**: 음성 안내  
+- **permission_handler**: 권한 처리  
+- **Arduino**: DS18B20 센서 + HM-10 BLE 모듈  
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 📱 주요 기능
+- **스플래시 화면** → 앱 로고 출력 후 자동 이동  
+- **블루투스 연결**  
+  - HM-10/BT-05 모듈 자동 스캔 및 연결  
+  - 이전 연결 장치 자동 재연결  
+- **홈 화면**  
+  - 스와이프 제스처로 타이머/온도계 이동  
+  - 아래 스와이프 시 앱 종료  
+- **타이머 페이지**  
+  - 기본 10분 설정  
+  - 위 스와이프: +10분  
+  - 오른쪽 스와이프: +1분  
+  - 왼쪽 스와이프: -1분  
+  - 더블탭 → “설정하신 시간은 X분입니다” 음성 안내 후 카운트다운 시작  
+  - 00:00 도달 시 “끝” 음성 안내  
+- **온도계 페이지**  
+  - 실시간 온도 표시 (DS18B20 센서 데이터)  
+  - 위 스와이프: +10℃  
+  - 오른쪽 스와이프: +5℃  
+  - 왼쪽 스와이프: -5℃  
+  - 아래 스와이프: 홈 화면으로 이동  
+  - 더블탭 → 목표 온도 확정 (“설정하신 온도는 X도입니다”)  
+  - 목표 온도 도달 시 “목표 온도에 도달했습니다” 음성 안내  
+
+---
+
+## ⚡ 설치 및 실행 방법
+1. 저장소 클론
+   ```bash
+   git clone https://github.com/사용자명/DDACOOK.git
+   cd DDACOOK
