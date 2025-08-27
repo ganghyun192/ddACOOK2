@@ -1,153 +1,176 @@
-// thermometer_page.dart
-// ⚠️ UI 구조/배치 변경 없이, BLE 온도 스트림(FFE1 notify)만 붙인 전체본
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'bluetooth_service.dart';
+// import 'bluetooth_service.dart'; // 실제 블루투스 연동 시 사용
 
 class ThermometerPage extends StatefulWidget {
-  const ThermometerPage({super.key});
+  const ThermometerPage({super.key, this.target}); // ✅ 레시피에서 넘겨줄 목표 온도
+  final double? target;
 
   @override
   State<ThermometerPage> createState() => _ThermometerPageState();
 }
 
 class _ThermometerPageState extends State<ThermometerPage> {
-  // ====== TTS & BLE ======
   final FlutterTts _tts = FlutterTts();
-  StreamSubscription<double>? _tempSub;
 
-  // ====== 상태값 ======
-  double _currentTemperature = 0.0;   // 실시간 현재 온도
-  double _targetTemperature  = 50.0;  // 목표 온도
-  bool _isTemperatureSet     = false; // 더블탭으로 설정 완료 여부
-  bool _hasAnnouncedArrival  = false; // 목표 도달 1회 안내 플래그
+  double _targetC = 50.0;   // 목표 온도(스와이프로 조절)
+  double _currentC = 25.0;  // 현재 온도(블루투스 수신으로 갱신)
+  StreamSubscription<String>? _btSub;
 
-  // 스와이프 판정용
-  Offset _swipeStart = Offset.zero;
+  bool _autoReturnOnReached = false;
+
+  // ── 스와이프 인식용 ──
+  Offset _panStart = Offset.zero;
+  bool _gestureConsumed = false;
+  static const double kMinSwipeDist = 60; // 거리 기반 임계값
 
   @override
   void initState() {
     super.initState();
+    _initTts();
 
-    // ★ BLE 온도 스트림 구독 (UI 변경 없음)
-    _tempSub = BleService().temperatureStream.listen((v) {
-      setState(() => _currentTemperature = v);
-      if (_isTemperatureSet && !_hasAnnouncedArrival && _currentTemperature >= _targetTemperature) {
-        _hasAnnouncedArrival = true;
-        _tts.speak("목표 온도에 도달했습니다.");
+    if (widget.target != null) {
+      _targetC = widget.target!;
+      _autoReturnOnReached = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _announce("목표 온도 섭씨 ${_targetC.toStringAsFixed(0)}도 입니다. 도달하면 자동으로 돌아갑니다.");
+      });
+    }
+
+    // ✅ 실제 블루투스 연동 예시
+    // _btSub = BluetoothService().onDataReceived.listen((raw) {
+    //   final v = double.tryParse(raw);
+    //   if (v != null) {
+    //     setState(() => _currentC = v);
+    //     _maybeAutoReturn();
+    //   }
+    // });
+
+    // 데모 테스트가 필요하면 임시 온도 상승 시뮬(원하면 주석 해제)
+    // _mockWarmUp();
+  }
+
+  Future<void> _initTts() async {
+    await _tts.setLanguage('ko-KR');
+    await _tts.setSpeechRate(0.5);
+  }
+
+  Future<void> _announce(String text) async {
+    await _tts.stop();
+    await _tts.speak(text);
+  }
+
+  // 더미: 온도 상승 시뮬
+  Timer? _mockTimer;
+  void _mockWarmUp() {
+    _mockTimer?.cancel();
+    _mockTimer = Timer.periodic(const Duration(milliseconds: 800), (t) {
+      setState(() => _currentC += 2.5);
+      _maybeAutoReturn();
+      if (_currentC >= _targetC + 5) {
+        t.cancel();
       }
     });
+  }
 
-    // TTS 기본 안내
-    _tts.setLanguage("ko-KR");
-    _tts.setSpeechRate(0.5);
-    _tts.setPitch(1.0);
-    _tts.speak("온도를 설정해주세요.");
+  void _maybeAutoReturn() async {
+    if (_autoReturnOnReached && _currentC >= _targetC && mounted) {
+      await _announce("목표 온도에 도달했습니다. 레시피로 돌아갑니다.");
+      if (!mounted) return;
+      Navigator.pop(context, true); // ✅ 레시피로 “도달” 신호
+    }
+  }
+
+  // ── 스와이프 제스처: 위 +10, 오른쪽 +5, 왼쪽 -5, 아래 뒤로가기 ──
+  void _onPanStart(DragStartDetails d) {
+    _panStart = d.localPosition;
+    _gestureConsumed = false;
+  }
+
+  void _onPanUpdate(DragUpdateDetails d) {
+    if (_gestureConsumed) return;
+
+    final delta = d.localPosition - _panStart;
+    final dx = delta.dx;
+    final dy = delta.dy;
+
+    if (dx.abs() < kMinSwipeDist && dy.abs() < kMinSwipeDist) return;
+
+    if (dx.abs() > dy.abs()) {
+      // 수평: 오른쪽/왼쪽
+      if (dx > 0) {
+        _bumpTarget(5);
+      } else {
+        _bumpTarget(-5);
+      }
+    } else {
+      // 수직: 위/아래
+      if (dy < 0) {
+        _bumpTarget(10);
+      } else {
+        // 아래로: 뒤로가기(레시피에서 온 경우 결과 false로 반환)
+        Navigator.pop(context, false);
+      }
+    }
+    _gestureConsumed = true;
+  }
+
+  void _onPanEnd(DragEndDetails d) {
+    _gestureConsumed = false;
+  }
+
+  void _bumpTarget(int delta) {
+    final old = _targetC;
+    double next = (_targetC + delta).clamp(0, 200).toDouble();
+    setState(() => _targetC = next);
+    _announce("목표 온도 ${_targetC.toStringAsFixed(0)}도");
+    // 목표 바꾸자마자 도달 체크 (상향 조절 시 즉시 넘어갈 수 있음)
+    _maybeAutoReturn();
   }
 
   @override
   void dispose() {
-    _tempSub?.cancel(); // ★ 통합: 구독 해제
+    _btSub?.cancel();
+    _mockTimer?.cancel();
+    _tts.stop();
     super.dispose();
   }
 
-  // ====== 스와이프 처리 ======
-  void _handleSwipe(Offset start, Offset end) {
-    if (_isTemperatureSet) return; // 설정 완료 후엔 변경 불가 (원래 의도 유지)
-
-    final dx = end.dx - start.dx;
-    final dy = end.dy - start.dy;
-    const threshold = 40;
-
-    // 위 스와이프: +10도
-    if (dy < -threshold && dy.abs() > dx.abs()) {
-      setState(() {
-        _targetTemperature = (_targetTemperature + 10).clamp(0, 200);
-      });
-      return;
-    }
-    // 오른쪽 스와이프: +5도
-    if (dx > threshold && dx.abs() > dy.abs()) {
-      setState(() {
-        _targetTemperature = (_targetTemperature + 5).clamp(0, 200);
-      });
-      return;
-    }
-    // 왼쪽 스와이프: -5도
-    if (dx < -threshold && dx.abs() > dy.abs()) {
-      setState(() {
-        _targetTemperature = (_targetTemperature - 5).clamp(0, 200);
-      });
-      return;
-    }
-    // 아래 스와이프: 홈으로 이동 (UI는 그대로, 동작만 유지)
-    if (dy > threshold && dy.abs() > dx.abs()) {
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
-      return;
-    }
-  }
-
-  // ====== 더블탭(설정 확정) ======
-  Future<void> _confirmTarget() async {
-    if (_isTemperatureSet) return;
-    setState(() {
-      _isTemperatureSet = true;
-      _hasAnnouncedArrival = false;
-    });
-    await _tts.stop();
-    await _tts.speak("설정하신 온도는 $_targetTemperature 도 입니다.");
-  }
-
-  // ====== 위젯 (UI 배치는 기존 구조 유지) ======
   @override
   Widget build(BuildContext context) {
+    // ⚠️ UI는 기존 레이아웃 유지 (텍스트만 표시)
     return Scaffold(
-      backgroundColor: Colors.blue, // 기존 테마 유지
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Thermometer'),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onPanStart: (d) => _swipeStart = d.localPosition,
-        onPanEnd: (d) {
-          // 끝점 근사치: 속도를 이용해 방향 추정
-          final end = _swipeStart + d.velocity.pixelsPerSecond / 30;
-          _handleSwipe(_swipeStart, end);
+        onPanStart: _onPanStart,
+        onPanUpdate: _onPanUpdate,
+        onPanEnd: _onPanEnd,
+        onDoubleTap: () {
+          _announce("현재 온도 ${_currentC.toStringAsFixed(1)}도. 목표 ${_targetC.toStringAsFixed(0)}도.");
         },
-        onDoubleTap: _confirmTarget,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 현재 온도 표시 (실시간)
               Text(
-                '${_currentTemperature.toStringAsFixed(1)} °C',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 64,
-                  fontWeight: FontWeight.bold,
-                ),
+                "${_currentC.toStringAsFixed(1)} ℃",
+                style: const TextStyle(fontSize: 64, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 12),
-              // 설정 온도 표시
-              const Text(
-                '설정 온도',
-                style: TextStyle(color: Colors.white, fontSize: 24),
-              ),
+              const SizedBox(height: 8),
               Text(
-                '$_targetTemperature °C',
-                style: const TextStyle(color: Colors.white, fontSize: 36),
+                "목표: ${_targetC.toStringAsFixed(0)} ℃",
+                style: TextStyle(fontSize: 18, color: Colors.grey[700]),
               ),
-              if (_isTemperatureSet)
-                const Padding(
-                  padding: EdgeInsets.only(top: 12.0),
-                  child: Text(
-                    '설정 완료됨',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ),
-              // (필요 시 안내 문구가 있었더라도 UI 변경 없이 유지)
+              const SizedBox(height: 16),
+              const Text("위: +10°, 오른쪽: +5°, 왼쪽: -5°, 아래: 뒤로"),
             ],
           ),
         ),
