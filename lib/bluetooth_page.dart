@@ -22,13 +22,15 @@ class _BluetoothPageState extends State<BluetoothPage> {
   static const _prefKeyLastName = 'last_ble_name';
 
   bool _scanning = false;
-  bool _autoConnecting = false;        // 자동 연결 시도 중인지 표시
+  bool _autoConnecting = false;
   final List<ScanResult> _results = [];
   StreamSubscription<List<ScanResult>>? _scanSub;
 
-  String? _lastId;                     // 직전 성공 장치 ID
-  String? _lastName;                   // 직전 성공 장치 이름
-  int _scanRetry = 0;                  // 자동 재스캔(없을 때) 소폭 재시도
+  String? _lastId;
+  String? _lastName;
+  int _scanRetry = 0;
+
+  bool _isNavigating = false;
 
   @override
   void initState() {
@@ -46,7 +48,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
     final req = await [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
-      Permission.locationWhenInUse, // 일부 기기에서 스캔에 필요
+      Permission.locationWhenInUse,
     ].request();
 
     if (req.values.any((s) => s.isDenied || s.isPermanentlyDenied)) {
@@ -70,7 +72,6 @@ class _BluetoothPageState extends State<BluetoothPage> {
   }
 
   bool _isHm10FamilyName(String name) {
-    // HM-10/BT-05 계열 우선 필터링
     final up = name.toUpperCase();
     return up.contains('HM') || up.contains('BT');
   }
@@ -78,7 +79,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
   Future<void> _startScan() async {
     setState(() {
       _scanning = true;
-      _autoConnecting = false; // 새 스캔에서는 자동연결 플래그 리셋
+      _autoConnecting = false;
     });
     _results.clear();
     await FlutterBluePlus.stopScan();
@@ -92,13 +93,9 @@ class _BluetoothPageState extends State<BluetoothPage> {
         if (name.isEmpty) continue;
         if (!_isHm10FamilyName(name)) continue;
 
-        // 결과 리스트에 중복 없이 추가
         final idx = _results.indexWhere((e) => e.device.remoteId == r.device.remoteId);
         if (idx < 0) _results.add(r);
 
-        // === 자동 연결 조건 ===
-        // 1) 저장된 lastId가 있고, 스캔된 remoteId가 일치 → 자동 연결
-        // 2) lastId가 없고 lastName이 있고, 이름이 동일 → 자동 연결(보조 조건)
         if (!_autoConnecting && !_isNavigating && (_lastId != null || _lastName != null)) {
           final matchById = _lastId != null && r.device.remoteId.str == _lastId;
           final matchByName = _lastId == null && _lastName != null && name == _lastName;
@@ -108,22 +105,18 @@ class _BluetoothPageState extends State<BluetoothPage> {
             triedAuto = true;
             setState(() {});
             await _connect(r, fromAuto: true);
-            break; // 자동 연결 시도 중에는 더 진행 안 함
+            break;
           }
         }
       }
 
-      if (triedAuto == false) {
-        setState(() {}); // 목록만 갱신
-      }
+      if (!triedAuto) setState(() {});
     });
 
     await FlutterBluePlus.startScan(timeout: const Duration(seconds: 6));
     if (!mounted) return;
     setState(() => _scanning = false);
 
-    // 스캔 결과가 비었고, 예전에 연결한 장치 정보가 있다면
-    // 조용히 1~2회 더 재시도(사용자 UX 보완)
     if (_results.isEmpty && (_lastId != null || _lastName != null) && _scanRetry < 2) {
       _scanRetry++;
       await Future.delayed(const Duration(seconds: 1));
@@ -133,28 +126,22 @@ class _BluetoothPageState extends State<BluetoothPage> {
     }
   }
 
-  bool _isNavigating = false;
-
   Future<void> _connect(ScanResult r, {bool fromAuto = false}) async {
-    // 연결 및 FFE1 Notify 구독
     await BleService().connectAndSubscribe(r.device);
 
     if (!mounted) return;
     if (BleService().isConnected) {
-      // 성공 시 마지막 장치 저장
       await _saveLastDevice(r.device);
 
       if (_isNavigating) return;
       _isNavigating = true;
 
-      // 자동 연결이면 토스트만 조용히, 수동은 스낵바로 알림
       if (!fromAuto) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('연결됨: ${r.device.platformName}')),
         );
       }
 
-      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomePage()),
       ).then((_) => _isNavigating = false);

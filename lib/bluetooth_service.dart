@@ -1,9 +1,8 @@
 // ble_service.dart
 // HM-10 / BT-05 (CC2541) BLE 전용 서비스
 // - FFE0 서비스 / FFE1 캐릭터리스틱 Notify 구독
-// - 실시간 온도 스트림 제공 (temperatureStream)
-// - write()로 텍스트 전송
-// - 끊김 시 소프트 자동 재연결 옵션(기본 on)
+// - 실시간 온도 Stream<double> 제공 (temperatureStream)
+// - write() 텍스트 송신 / 끊김 시 소프트 자동 재연결
 
 import 'dart:async';
 import 'dart:convert';
@@ -28,12 +27,12 @@ class BleService {
   final _tempCtrl = StreamController<double>.broadcast();
   final _logCtrl  = StreamController<String>.broadcast();
 
-  // 내부 파서 상태
+  // 내부 상태
   String _lineBuffer = '';
   bool _autoReconnect = true;
   bool _reconnecting = false;
 
-  // GETTERS
+  // Getters
   Stream<double> get temperatureStream => _tempCtrl.stream;
   Stream<String> get logStream => _logCtrl.stream;
   BluetoothDevice? get device => _device;
@@ -51,7 +50,6 @@ class BleService {
     _device = device;
     _log("🔗 연결 시도: ${device.platformName} (${device.remoteId.str})");
 
-    // 연결 상태 구독 설정
     await _connSub?.cancel();
     _connSub = device.connectionState.listen((s) {
       _log("🔔 상태: $s");
@@ -60,18 +58,17 @@ class BleService {
       }
     });
 
-    // 실제 연결
-    await device.connect(autoConnect: false).catchError((e) {
+    try {
+      await device.connect(autoConnect: false);
+    } catch (e) {
       _log("❌ 연결 실패: $e");
-    });
+    }
 
     if (!isConnected) return;
     _log("✅ 연결됨");
 
-    // MTU 여유 (옵션)
     try { await device.requestMtu(185); } catch (_) {}
 
-    // 서비스/특성 탐색
     await _discoverAndSubscribe();
   }
 
@@ -82,7 +79,7 @@ class BleService {
     _log("🔎 서비스 탐색...");
     final services = await d.discoverServices();
 
-    // FFE0 → FFE1 우선 탐색
+    // FFE0 → FFE1
     BluetoothCharacteristic? target;
     for (final s in services) {
       if (s.uuid == _svc) {
@@ -92,23 +89,23 @@ class BleService {
       }
     }
 
-    // 백업: 아무 서비스든 'ffe1' 포함 특성
+    // 백업: uuid에 ffe1 포함
     if (target == null) {
       final ffe1List = services
           .expand((s) => s.characteristics)
           .where((c) => c.uuid.toString().toLowerCase().contains('ffe1'))
           .toList();
-
-      if (ffe1List.isNotEmpty) {
-        target = ffe1List.first;
-      }
+      if (ffe1List.isNotEmpty) target = ffe1List.first;
     }
 
+    if (target == null) {
+      _log("❌ FFE1 특성을 찾지 못함");
+      return;
+    }
 
     _rxChar = target;
     _log("📨 수신 캐릭터리스틱: ${_rxChar!.uuid}");
 
-    // Notify 활성화
     try { await _rxChar!.setNotifyValue(true); } catch (e) { _log("⚠️ notify 실패: $e"); }
 
     // 일부 펌웨어는 CCCD(0x2902) 직접 설정 필요
@@ -124,7 +121,6 @@ class BleService {
       _log("⚠️ CCCD 설정 실패: $e");
     }
 
-    // 이전 구독 해제 후 재구독
     await _notifySub?.cancel();
     _notifySub = _rxChar!.onValueReceived.listen(_onData);
 
@@ -143,7 +139,7 @@ class BleService {
     final filtered = data.where((b) =>
     b == 9 || b == 10 || b == 13 || (b >= 32 && b <= 126)).toList();
 
-    // 2) 유니코드 디코드 (깨진 바이트 허용)
+    // 2) 유니코드 디코드
     final chunk = utf8.decode(filtered, allowMalformed: true);
 
     // 3) 라인 버퍼링
@@ -151,14 +147,14 @@ class BleService {
     final lines = _lineBuffer.split(RegExp(r'[\r\n]+'));
     _lineBuffer = lines.removeLast();
 
-    // 4) 각 라인 처리
+    // 4) 한 줄씩 처리
     for (final line in lines) {
       final text = line.trim();
       if (text.isEmpty) continue;
 
       _log("📥 RX: $text");
 
-      // 숫자만 추출 (예: "25.1", "T=25.1C" 등)
+      // 숫자만 추출 (25, 25.1, T=25.1C 등에서)
       final m = RegExp(r'[-+]?\d*\.?\d+').firstMatch(text);
       if (m != null) {
         final v = double.tryParse(m.group(0)!);

@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-// import 'bluetooth_service.dart'; // 실제 블루투스 연동 시 사용
+import 'bluetooth_service.dart';
 
 class ThermometerPage extends StatefulWidget {
-  const ThermometerPage({super.key, this.target}); // ✅ 레시피에서 넘겨줄 목표 온도
+  const ThermometerPage({super.key, this.target}); // 레시피에서 넘겨줄 목표 온도
   final double? target;
 
   @override
@@ -15,8 +15,8 @@ class _ThermometerPageState extends State<ThermometerPage> {
   final FlutterTts _tts = FlutterTts();
 
   double _targetC = 50.0;   // 목표 온도(스와이프로 조절)
-  double _currentC = 25.0;  // 현재 온도(블루투스 수신으로 갱신)
-  StreamSubscription<String>? _btSub;
+  double _currentC = 25.0;  // 현재 온도(BLE 수신으로 갱신)
+  StreamSubscription<double>? _tempSub; // ✅ BleService temperatureStream 구독
 
   bool _autoReturnOnReached = false;
 
@@ -38,16 +38,13 @@ class _ThermometerPageState extends State<ThermometerPage> {
       });
     }
 
-    // ✅ 실제 블루투스 연동 예시
-    // _btSub = BluetoothService().onDataReceived.listen((raw) {
-    //   final v = double.tryParse(raw);
-    //   if (v != null) {
-    //     setState(() => _currentC = v);
-    //     _maybeAutoReturn();
-    //   }
-    // });
+    // ✅ BLE 실시간 온도 수신 연결
+    _tempSub = BleService().temperatureStream.listen((v) {
+      setState(() => _currentC = v);
+      _maybeAutoReturn(); // 목표 도달 체크
+    });
 
-    // 데모 테스트가 필요하면 임시 온도 상승 시뮬(원하면 주석 해제)
+    // 데모 테스트 필요 시 임시 온도 상승 시뮬(원하면 주석 해제)
     // _mockWarmUp();
   }
 
@@ -61,7 +58,7 @@ class _ThermometerPageState extends State<ThermometerPage> {
     await _tts.speak(text);
   }
 
-  // 더미: 온도 상승 시뮬
+  // 더미: 온도 상승 시뮬 (테스트용)
   Timer? _mockTimer;
   void _mockWarmUp() {
     _mockTimer?.cancel();
@@ -76,9 +73,9 @@ class _ThermometerPageState extends State<ThermometerPage> {
 
   void _maybeAutoReturn() async {
     if (_autoReturnOnReached && _currentC >= _targetC && mounted) {
-      await _announce("목표 온도에 도달했습니다. 레시피로 돌아갑니다.");
+      await _announce("목표온도도달");
       if (!mounted) return;
-      Navigator.pop(context, true); // ✅ 레시피로 “도달” 신호
+      Navigator.pop(context, true); // 레시피로 “도달” 신호
     }
   }
 
@@ -121,17 +118,15 @@ class _ThermometerPageState extends State<ThermometerPage> {
   }
 
   void _bumpTarget(int delta) {
-    final old = _targetC;
     double next = (_targetC + delta).clamp(0, 200).toDouble();
     setState(() => _targetC = next);
     _announce("목표 온도 ${_targetC.toStringAsFixed(0)}도");
-    // 목표 바꾸자마자 도달 체크 (상향 조절 시 즉시 넘어갈 수 있음)
     _maybeAutoReturn();
   }
 
   @override
   void dispose() {
-    _btSub?.cancel();
+    _tempSub?.cancel();
     _mockTimer?.cancel();
     _tts.stop();
     super.dispose();
