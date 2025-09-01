@@ -199,10 +199,21 @@ class _RecipePageState extends State<RecipePage> {
   // ✅ 더미 레시피 매칭
   _Recipe? _findRecipe(String keyword) {
     keyword = keyword.replaceAll(" ", "");
+
+    // 기존 매칭 유지
     if (keyword.contains("알리오올리오")) return _aglio;
     if (keyword.contains("계란") || keyword.contains("삶기")) return _egg;
+
+    // ✅ 국물 요리 매칭 추가
+    if (keyword.contains("된장") || keyword.contains("된장찌개")) return _doenjang;
+    if (keyword.contains("부대찌개") || keyword.contains("부대")) return _budae;
+    if (keyword.contains("라면")) return _ramen;
+    if (keyword.contains("우동")) return _udon;
+    if (keyword.contains("칼국수")) return _kalguksu;
+
     return null;
   }
+
 
   @override
   void dispose() {
@@ -316,5 +327,60 @@ final _egg = _Recipe(
     Sentence("약 10분간 삶습니다.", timerMinutes: 10), // ✅ 타이머 호출
     Sentence("찬물에 담가 식힙니다."),
     Sentence("껍질을 까고 접시에 담습니다."),
+  ],
+);
+
+final _doenjang = _Recipe(
+  title: "된장찌개",
+  sentences: [
+    Sentence("냄비에 물을 붓고 멸치와 다시마를 넣습니다."),
+    Sentence("물이 끓을 때까지 기다립니다.", targetTempC: 100),
+    Sentence("된장과 고춧가루를 풀어 넣고 두부와 애호박, 양파를 넣습니다."),
+    Sentence("중불에서 15분간 끓입니다.", timerMinutes: 15),
+    Sentence("파와 청양고추를 넣고 한소끔 더 끓여 마무리합니다."),
+  ],
+);
+
+final _budae = _Recipe(
+  title: "부대찌개",
+  sentences: [
+    Sentence("냄비에 물과 육수 재료(멸치, 다시마)를 넣습니다."),
+    Sentence("물이 끓을 때까지 기다립니다.", targetTempC: 100),
+    Sentence("스팸, 소시지, 김치, 양파를 넣고 양념장을 넣습니다."),
+    Sentence("보글보글 15분간 끓입니다.", timerMinutes: 15),
+    Sentence("라면사리나 떡을 넣고 한소끔 더 끓여 완성합니다."),
+  ],
+);
+
+final _ramen = _Recipe(
+  title: "라면",
+  sentences: [
+    Sentence("냄비에 물을 붓습니다."),
+    Sentence("물이 끓을 때까지 기다립니다.", targetTempC: 100),
+    Sentence("면과 스프를 넣고 젓가락으로 잘 풀어줍니다."),
+    Sentence("4분간 끓입니다.", timerMinutes: 4), // 구조상 분 단위만 가능
+    Sentence("계란이나 파를 추가해 취향껏 마무리합니다."),
+  ],
+);
+
+final _udon = _Recipe(
+  title: "우동",
+  sentences: [
+    Sentence("냄비에 물과 가쓰오/우동 육수를 넣습니다."),
+    Sentence("물이 끓을 때까지 기다립니다.", targetTempC: 100),
+    Sentence("우동면을 넣고 가볍게 풀어줍니다."),
+    Sentence("5분간 끓입니다.", timerMinutes: 5),
+    Sentence("어묵, 파, 김가루를 올려 완성합니다."),
+  ],
+);
+
+final _kalguksu = _Recipe(
+  title: "칼국수",
+  sentences: [
+    Sentence("냄비에 멸치 다시마 육수를 준비합니다."),
+    Sentence("물이 끓을 때까지 기다립니다.", targetTempC: 100),
+    Sentence("칼국수 면과 채소를 넣고 젓가락으로 풀어줍니다."),
+    Sentence("8분간 끓입니다.", timerMinutes: 8),
+    Sentence("소금으로 간을 맞추고 파를 넣어 마무리합니다."),
   ],
 );
